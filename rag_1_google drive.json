@@ -1,0 +1,430 @@
+{
+  "name": "rag_1 — Загрузка и индексация видео",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video-upload",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-600, 0],
+      "id": "webhook-upload",
+      "name": "Webhook — приём видео",
+      "webhookId": "video-upload"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok', message: 'Видео принято. Транскрипция и индексация запущены.' }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [-200, 0],
+      "id": "respond-webhook",
+      "name": "Ответ — видео принято"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list"
+        },
+        "name": "={{ $('Webhook — приём видео').item.json.body.title || $('Webhook — приём видео').first().json.headers['x-filename'] || 'video' }}.{{ $binary.file.mimeType.split('/')[1] || 'mp4' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-200, 240],
+      "id": "upload-to-gdrive",
+      "name": "Загрузка на Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "2KWrQBMM4dc15h55",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.id }}/permissions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"role\": \"reader\", \"type\": \"anyone\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [80, 240],
+      "id": "set-permissions",
+      "name": "Открыть доступ по ссылке",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "2KWrQBMM4dc15h55",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Загрузка на Google Drive').item.json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [360, 240],
+      "id": "download-from-gdrive",
+      "name": "Скачать файл с Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "2KWrQBMM4dc15h55",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/tmp/n8n_video_{{ $execution.id }}.mp4",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [580, 240],
+      "id": "write-video-to-disk",
+      "name": "Сохранить видео на диск"
+    },
+    {
+      "parameters": {
+        "command": "=ffmpeg -i /tmp/n8n_video_{{ $execution.id }}.mp4 -vn -acodec libmp3lame -ab 128k -y /tmp/n8n_audio_{{ $execution.id }}.mp3 && rm /tmp/n8n_video_{{ $execution.id }}.mp4",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [800, 240],
+      "id": "ffmpeg-extract-audio",
+      "name": "FFmpeg — извлечь аудио"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "=/tmp/n8n_audio_{{ $execution.id }}.mp3",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1020, 240],
+      "id": "read-audio-from-disk",
+      "name": "Прочитать аудио с диска"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "parameterType": "formBinaryData",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "language",
+              "value": "ru"
+            },
+            {
+              "name": "response_format",
+              "value": "verbose_json"
+            },
+            {
+              "name": "timestamp_granularities[]",
+              "value": "segment"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 240],
+      "id": "whisper-transcribe",
+      "name": "Whisper — транскрипция (API)",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из предыдущих нод\nconst transcription = $('Whisper — транскрипция (API)').first().json;\nconst driveFile = $('Загрузка на Google Drive').first().json;\nconst webhookData = $('Webhook — приём видео').first().json;\n\nconst title = webhookData.body?.title || driveFile.name || 'Без названия';\nconst description = webhookData.body?.description || '';\nconst fileId = driveFile.id;\n\n// Собираем текст с таймкодами из segments\nlet textWithTimecodes = '';\n\nif (transcription.segments && Array.isArray(transcription.segments)) {\n  for (const seg of transcription.segments) {\n    const startSec = Math.floor(seg.start);\n    const min = Math.floor(startSec / 60);\n    const sec = (startSec % 60).toString().padStart(2, '0');\n    const timecode = `${min}:${sec}`;\n    textWithTimecodes += `(${timecode}) ${seg.text.trim()}\\n`;\n  }\n} else {\n  textWithTimecodes = transcription.text || '';\n}\n\n// Удаляем временный аудио-файл\ntry {\n  const execId = $execution.id;\n  require('fs').unlinkSync(`/tmp/n8n_audio_${execId}.mp3`);\n} catch(e) {}\n\nreturn [{\n  json: {\n    full_text: textWithTimecodes,\n    title: title,\n    description: description,\n    video_file_id: fileId,\n    video_url: `https://drive.google.com/file/d/${fileId}/preview`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1460, 240],
+      "id": "format-transcription",
+      "name": "Форматирование транскрипции"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "fobo",
+          "mode": "list",
+          "cachedResultName": "fobo"
+        },
+        "embeddingBatchSize": 150,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [1740, 240],
+      "id": "qdrant-insert",
+      "name": "Qdrant — сохранение",
+      "credentials": {
+        "qdrantApi": {
+          "id": "9RJEDHoAHAOLsPwp",
+          "name": "QdrantApi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.full_text }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "title",
+                "value": "={{ $json.title }}"
+              },
+              {
+                "name": "video_file_id",
+                "value": "={{ $json.video_file_id }}"
+              },
+              {
+                "name": "video_url",
+                "value": "={{ $json.video_url }}"
+              },
+              {
+                "name": "description",
+                "value": "={{ $json.description }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [1860, 440],
+      "id": "data-loader",
+      "name": "Data Loader"
+    },
+    {
+      "parameters": {
+        "chunkSize": 300,
+        "chunkOverlap": 50,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [1860, 600],
+      "id": "text-splitter",
+      "name": "Text Splitter"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [1676, 440],
+      "id": "embeddings-openai",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook — приём видео": {
+      "main": [
+        [
+          {
+            "node": "Ответ — видео принято",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Загрузка на Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Загрузка на Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Открыть доступ по ссылке",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Открыть доступ по ссылке": {
+      "main": [
+        [
+          {
+            "node": "Скачать файл с Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Скачать файл с Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Сохранить видео на диск",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Сохранить видео на диск": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg — извлечь аудио",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg — извлечь аудио": {
+      "main": [
+        [
+          {
+            "node": "Прочитать аудио с диска",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Прочитать аудио с диска": {
+      "main": [
+        [
+          {
+            "node": "Whisper — транскрипция (API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper — транскрипция (API)": {
+      "main": [
+        [
+          {
+            "node": "Форматирование транскрипции",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Форматирование транскрипции": {
+      "main": [
+        [
+          {
+            "node": "Qdrant — сохранение",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Qdrant — сохранение",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant — сохранение",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "new-auto-pipeline-v3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c89ea9394b2c25e9479c386babf44f71a1748af545f056a5713e02c426c62803"
+  },
+  "id": "GZ6HDn3COOObl09F",
+  "tags": []
+}

@@ -1,0 +1,1005 @@
+{
+  "name": "rag_2",
+  "nodes": [
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1344,
+        304
+      ],
+      "id": "9b7c3949-37cd-432b-9cf7-18b7b406e8ca",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.output;\n\n// 1. Извлекаем ID видео / share token (несколько форматов)\nlet fileId = null;\nconst idPatterns = [\n  /ID видео[:\\s]*([a-zA-Z0-9_-]{5,})/i,\n  /video_file_id[:\\s]*([a-zA-Z0-9_-]{5,})/i,\n  /nextcloud\\.agentura-soft\\.ru\\/s\\/([a-zA-Z0-9]+)/\n];\nfor (const pat of idPatterns) {\n  const m = text.match(pat);\n  if (m) { fileId = m[1].trim(); break; }\n}\n\n// 2. Извлекаем таймкод (несколько форматов)\nlet startSec = 0;\nconst timePatterns = [\n  /Таймкод[:\\s]*(\\d{1,3}):(\\d{2})/i,\n  /\\((\\d{1,3}):(\\d{2})\\s*[-–)]/,\n  /\\b(\\d{1,3}):(\\d{2})\\b/\n];\nfor (const pat of timePatterns) {\n  const m = text.match(pat);\n  if (m) {\n    startSec = parseInt(m[1]) * 60 + parseInt(m[2]);\n    break;\n  }\n}\n\n// 3. Формируем video_url (Nextcloud или Google Drive)\nlet videoUrl = null;\n\n// Ищем прямые URL в тексте\nconst ncUrl = text.match(/https:\\/\\/nextcloud\\.agentura-soft\\.ru\\/s\\/[a-zA-Z0-9]+\\/download/);\nconst gdUrl = text.match(/https:\\/\\/drive\\.google\\.com\\/file\\/d\\/[a-zA-Z0-9_-]+\\/preview/);\n\nif (ncUrl) {\n  videoUrl = ncUrl[0];\n} else if (gdUrl) {\n  videoUrl = gdUrl[0];\n} else if (fileId) {\n  if (fileId.length > 25) {\n    videoUrl = `https://drive.google.com/file/d/${fileId}/preview`;\n  } else {\n    videoUrl = `https://nextcloud.agentura-soft.ru/s/${fileId}/download`;\n  }\n}\n\n// 4. Очищаем ответ от служебных строк\nlet answer = text\n  .replace(/^.*ID видео.*$/gm, '')\n  .replace(/^.*Таймкод.*$/gm, '')\n  .replace(/^.*Источник.*$/gm, '')\n  .replace(/^.*video_file_id.*$/gm, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nreturn [{\n  json: {\n    answer: answer,\n    video_url: videoUrl,\n    start_time_sec: startSec\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        -64
+      ],
+      "id": "a71f1eda-c44e-478a-af69-0f75a06d0fd5",
+      "name": "Code in JavaScript",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -656,
+        -64
+      ],
+      "id": "6098c56b-e990-4169-9784-50ec977b2aed",
+      "name": "Respond to Webhook",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "3c9f0d22-584d-4297-b2e4-f9feaae43148",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1664,
+        -128
+      ],
+      "id": "89bb7e45-f75f-4314-add5-63d47fa29ff1",
+      "name": "Webhook",
+      "webhookId": "3c9f0d22-584d-4297-b2e4-f9feaae43148",
+      "alwaysOutputData": true,
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        96
+      ],
+      "id": "baf87b54-8d7c-4baf-925e-45873b871d9c",
+      "name": "Send a text message",
+      "webhookId": "71c6685b-dcd9-45a6-ad2a-323b8c87cb8f",
+      "credentials": {
+        "telegramApi": {
+          "id": "UvcGc2b1FgXjGGpM",
+          "name": "Autoposting"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1088,
+        448
+      ],
+      "id": "4ef6d07a-f7a4-431c-884e-05cc48a875cc",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1504,
+        304
+      ],
+      "id": "3c6941ec-5227-4ca5-81ec-cf139b54c0b2",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1872,
+        96
+      ],
+      "id": "ba8e6a5a-a3f0-4534-92b9-24694aa0bec1",
+      "name": "Telegram Trigger",
+      "webhookId": "cd32e3a7-7226-4ee4-ada0-53a87fee8f4b",
+      "credentials": {
+        "telegramApi": {
+          "id": "UvcGc2b1FgXjGGpM",
+          "name": "Autoposting"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2208,
+        432
+      ],
+      "id": "80ce8e66-2ee9-4cad-b222-09cfb63a4f9f",
+      "name": "When chat message received",
+      "webhookId": "3c52e29c-c7d3-46eb-ad68-dd0cc8e4d80d",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": "deepseek/deepseek-chat-v3.1:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -1824,
+        464
+      ],
+      "id": "85fe2787-f1fb-4a25-a924-2e1821247e8c",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "AAD1hj08GMreD8Wx",
+          "name": "OpenRouter account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "anthropic/claude-3.7-sonnet",
+          "mode": "list",
+          "cachedResultName": "anthropic/claude-3.7-sonnet"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        -192
+      ],
+      "id": "5ac1659b-f371-45ff-acbe-a371ad22eb3c",
+      "name": "OpenAI Chat Model3",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text:latest"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        -1680,
+        496
+      ],
+      "id": "7849aec1-2c73-4a0b-a6ec-7255aed4634e",
+      "name": "Embeddings Ollama1",
+      "credentials": {
+        "ollamaApi": {
+          "id": "7NcbWtzTWfeCbfWN",
+          "name": "Ollama account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Используй этот инструмент для поиска в базе данных",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "fobo",
+          "mode": "list",
+          "cachedResultName": "fobo"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        -1088,
+        304
+      ],
+      "id": "c3eb5840-8e95-459d-a466-281eb5e910db",
+      "name": "Qdrant Vector Store1",
+      "credentials": {
+        "qdrantApi": {
+          "id": "9RJEDHoAHAOLsPwp",
+          "name": "QdrantApi account 2"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.query }}",
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "=#overview\nТы — эксперт по проекту FOBO \n\nВаша роль и основная задача — это Извлекатель Контекст из Базы Данных\n\n##instructions\n\n- Вы должны проанализировать запрос пользователя, вникнуть в его суть и отыскать подходящие данные в Базе Данных\n\n- Проводите поиск в Базе Данных до тех пор, пока не обнаружите нужный фрагмент для ответа\n\n- Как только соберёте весь требуемый контекст для создания ответа пользователю, передайте его в качестве основы для другой модели ИИ, которая и составит окончательный ответ\n\n- Вы идеально разбираетесь в запросе и тщательно просматриваете базу знаний столько раз, сколько потребуется, в поисках детализированных сведений\n\n- Вы не имеете права отвечать, пока не завершите всесторонний поиск в базе данных. Если ничего подходящего не найдено, просто укажите: \"Контекст не найден\"\n\nНайди в базе знаний (в транскрибациях видео) наиболее релевантный фрагмент. В этом фрагменте обязательно найди таймкод.\n- Точный таймкод из текста.\n\n- Если в найденном фрагменте есть таймкод — обязательно укажи его.\n\n- Обязательно укажи таймкод в формате Таймкод: как можно ближе к началу ответа. Не выдумывай, бери ТОЛЬКО из текста. \n\n- Укажи источник (название)\n\n-Укажи ID видео всегда в таком формате \"ID видео\""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.1,
+      "position": [
+        -1328,
+        96
+      ],
+      "id": "bf863a80-da3f-43c8-bc7c-00be56528b01",
+      "name": "AI Agent1",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Это вопрос пользователя:\n{{ $('When chat message received').item.json.chatInput }}\n\nОтветь на него на основе этих данных:\n{{ $json.pageContent.join('\\n\\n\\n -------- \\n\\n\\n') }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.1,
+      "position": [
+        -816,
+        -464
+      ],
+      "id": "5b5c50c2-5cb0-439d-b310-8c79cf262c71",
+      "name": "AI Agent",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "document.pageContent"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -1024,
+        -464
+      ],
+      "id": "c57b7dde-bb66-4dc2-8764-a8d4fd2fcf4f",
+      "name": "Aggregate",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text:latest"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        -1376,
+        -272
+      ],
+      "id": "1b091f57-e58d-46f3-ab5b-f2a97a0de41a",
+      "name": "Embeddings Ollama",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "video классический RAG",
+          "mode": "list",
+          "cachedResultName": "video классический RAG"
+        },
+        "prompt": "={{ $json.chatInput }}",
+        "includeDocumentMetadata": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        -1376,
+        -464
+      ],
+      "id": "ceb7695d-b25e-48f8-a776-da611473ddc0",
+      "name": "Qdrant Vector Store",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "video классический RAG",
+          "mode": "list",
+          "cachedResultName": "video классический RAG"
+        },
+        "prompt": "={{ $json.chatInput }}",
+        "includeDocumentMetadata": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        -3072,
+        -1360
+      ],
+      "id": "ac0296f5-6c16-4991-87ba-344f589b5cbd",
+      "name": "Qdrant Vector Store2",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text:latest"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        -3072,
+        -1168
+      ],
+      "id": "55d27bf8-cb15-45fd-acae-58850d677793",
+      "name": "Embeddings Ollama2",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "document.pageContent"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -2720,
+        -1360
+      ],
+      "id": "917ebcd4-c817-4a3e-b5a2-fba883e2a231",
+      "name": "Aggregate1",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Это вопрос пользователя:\n{{ $('When chat message received').item.json.chatInput }}\n\nОтветь на него на основе этих данных:\n{{ $json.pageContent.join('\\n\\n\\n -------- \\n\\n\\n') }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.1,
+      "position": [
+        -2512,
+        -1360
+      ],
+      "id": "8b94b670-f255-408d-9ce5-6c798b906b75",
+      "name": "AI Agent2",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.query }}",
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "=#overview\nТы — эксперт по проекту FOBO \n\nВаша роль и основная задача — это Извлекатель Контекст из Базы Данных\n\n##instructions\n\n- Вы должны проанализировать запрос пользователя, вникнуть в его суть и отыскать подходящие данные в Базе Данных\n\n- Проводите поиск в Базе Данных до тех пор, пока не обнаружите нужный фрагмент для ответа\n\n- Как только соберёте весь требуемый контекст для создания ответа пользователю, передайте его в качестве основы для другой модели ИИ, которая и составит окончательный ответ\n\n- Вы идеально разбираетесь в запросе и тщательно просматриваете базу знаний столько раз, сколько потребуется, в поисках детализированных сведений\n\n- Вы не имеете права отвечать, пока не завершите всесторонний поиск в базе данных. Если ничего подходящего не найдено, просто укажите: \"Контекст не найден\"\n\nНайди в базе знаний (в транскрибациях видео) наиболее релевантный фрагмент. В этом фрагменте обязательно найди таймкод.\n- Точный таймкод из текста.\n\n- Если в найденном фрагменте есть таймкод — обязательно укажи его.\n\n- Обязательно укажи таймкод в формате Таймкод: как можно ближе к началу ответа. Не выдумывай, бери ТОЛЬКО из текста. \n\n- Укажи источник (название)\n\n-Укажи ID видео всегда в таком формате \"ID видео\""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.1,
+      "position": [
+        -3024,
+        -800
+      ],
+      "id": "d21695a9-1359-4379-ae9f-81997dbea50e",
+      "name": "AI Agent3"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Используй этот инструмент для поиска в базе данных",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "fobo",
+          "mode": "list",
+          "cachedResultName": "fobo"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        -2784,
+        -592
+      ],
+      "id": "7a35c070-3fbe-4190-ab40-e94c93ae2155",
+      "name": "Qdrant Vector Store3",
+      "credentials": {
+        "qdrantApi": {
+          "id": "9RJEDHoAHAOLsPwp",
+          "name": "QdrantApi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text:latest"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        -3376,
+        -400
+      ],
+      "id": "c9d4cb9e-24f3-4730-b86f-b9542e2de22a",
+      "name": "Embeddings Ollama3",
+      "credentials": {
+        "ollamaApi": {
+          "id": "7NcbWtzTWfeCbfWN",
+          "name": "Ollama account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "anthropic/claude-3.7-sonnet",
+          "mode": "list",
+          "cachedResultName": "anthropic/claude-3.7-sonnet"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -2496,
+        -1088
+      ],
+      "id": "91909f97-f4f1-40ef-82a2-f8e7356630a4",
+      "name": "OpenAI Chat Model4",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": "deepseek/deepseek-chat-v3.1:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -3520,
+        -432
+      ],
+      "id": "70ee8abb-8751-4ad3-85c0-0b566751ed1a",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "AAD1hj08GMreD8Wx",
+          "name": "OpenRouter account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -3568,
+        -800
+      ],
+      "id": "39fc1dba-25fe-4c0b-9253-f3d3829c940b",
+      "name": "Telegram Trigger1",
+      "webhookId": "cd32e3a7-7226-4ee4-ada0-53a87fee8f4b",
+      "credentials": {
+        "telegramApi": {
+          "id": "UvcGc2b1FgXjGGpM",
+          "name": "Autoposting"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -3200,
+        -592
+      ],
+      "id": "51aea1df-4736-4464-9c6d-72a829c9e6e5",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -2784,
+        -448
+      ],
+      "id": "4d1abb9b-ab55-420a-8e85-deda5a62292a",
+      "name": "Embeddings OpenAI1",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger1').item.json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1888,
+        -800
+      ],
+      "id": "a22c5c0c-8116-4f10-82b0-7e0da50fb0bb",
+      "name": "Send a text message1",
+      "webhookId": "71c6685b-dcd9-45a6-ad2a-323b8c87cb8f",
+      "credentials": {
+        "telegramApi": {
+          "id": "UvcGc2b1FgXjGGpM",
+          "name": "Autoposting"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "3c9f0d22-584d-4297-b2e4-f9feaae43148",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -3360,
+        -1024
+      ],
+      "id": "13faea0b-fcde-4f10-b054-544477420ab7",
+      "name": "Webhook1",
+      "webhookId": "3c9f0d22-584d-4297-b2e4-f9feaae43148",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2352,
+        -960
+      ],
+      "id": "a6631647-234c-485d-bc91-7f3cfeb809c0",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.output;\n\n// 1. Извлекаем ID видео / share token (несколько форматов)\nlet fileId = null;\nconst idPatterns = [\n  /ID видео[:\\s]*([a-zA-Z0-9_-]{5,})/i,\n  /video_file_id[:\\s]*([a-zA-Z0-9_-]{5,})/i,\n  /nextcloud\\.agentura-soft\\.ru\\/(index\\.php\\/)?s\\/([a-zA-Z0-9]+)/\n];\nfor (const pat of idPatterns) {\n  const m = text.match(pat);\n  if (m) { fileId = m[1].trim(); break; }\n}\n\n// 2. Извлекаем таймкод (несколько форматов)\nlet startSec = 0;\nconst timePatterns = [\n  /Таймкод[:\\s]*(\\d{1,3}):(\\d{2})/i,\n  /\\((\\d{1,3}):(\\d{2})\\s*[-–)]/,\n  /\\b(\\d{1,3}):(\\d{2})\\b/\n];\nfor (const pat of timePatterns) {\n  const m = text.match(pat);\n  if (m) {\n    startSec = parseInt(m[1]) * 60 + parseInt(m[2]);\n    break;\n  }\n}\n\n// 3. Формируем video_url (Nextcloud или Google Drive)\nlet videoUrl = null;\n\n// Ищем прямые URL в тексте\nconst ncUrl = text.match(/https:\\/\\/nextcloud\\.agentura-soft\\.ru\\/(index\\.php\\/)?s\\/[a-zA-Z0-9]+\\/download/);\nconst gdUrl = text.match(/https:\\/\\/drive\\.google\\.com\\/file\\/d\\/[a-zA-Z0-9_-]+\\/preview/);\n\nif (ncUrl) {\n  videoUrl = ncUrl[0];\n} else if (gdUrl) {\n  videoUrl = gdUrl[0];\n} else if (fileId) {\n  if (fileId.length > 25) {\n    videoUrl = `https://drive.google.com/file/d/${fileId}/preview`;\n  } else {\n    videoUrl = `https://nextcloud.agentura-soft.ru/index.php/s/${fileId}/download`;\n  }\n}\n\n// 4. Очищаем ответ от служебных строк\nlet answer = text\n  .replace(/^.*ID видео.*$/gm, '')\n  .replace(/^.*Таймкод.*$/gm, '')\n  .replace(/^.*Источник.*$/gm, '')\n  .replace(/^.*video_file_id.*$/gm, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nreturn [{\n  json: {\n    answer: answer,\n    video_url: videoUrl,\n    start_time_sec: startSec\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2640,
+        -960
+      ],
+      "id": "83adbc29-0848-42a2-9439-93877a1eb3bc",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -3040,
+        -592
+      ],
+      "id": "b905cc6d-13f8-4eaf-81c9-e567fcd8fa8b",
+      "name": "OpenAI Chat Model5",
+      "credentials": {
+        "openAiApi": {
+          "id": "PGcbdvVjBsD5s4ky",
+          "name": "tasktg"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Ollama": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Store2": {
+      "main": [
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Ollama2": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store2",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent3": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Store3": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store3",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "10169d71-8b0e-4a10-ad53-90cc675f6ad2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c89ea9394b2c25e9479c386babf44f71a1748af545f056a5713e02c426c62803"
+  },
+  "id": "KZYwSCs1LWWETjdE",
+  "tags": [
+    {
+      "createdAt": "2025-09-02T07:56:31.497Z",
+      "updatedAt": "2025-09-02T07:56:31.497Z",
+      "id": "h2LbWgWWY0775NLn",
+      "name": "RAG Владимир Карпухин"
+    }
+  ]
+}

@@ -1,0 +1,296 @@
+{
+  "name": "arXiv Monitor - Gout/Hyperuricemia Research",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const queries = [\n  {\n    group: \"core_disease\",\n    query: `all:hyperuricemia OR all:gout OR all:\"monosodium urate\" OR all:\"urate-lowering therapy\"`\n  },\n  {\n    group: \"ai_methods\",\n    query: `(all:hyperuricemia OR all:gout OR all:rheumatology) AND (all:\"machine learning\" OR all:\"deep learning\" OR all:\"explainable AI\" OR all:\"graph neural network\" OR all:\"multi-omics\")`\n  },\n  {\n    group: \"clinical_prediction\",\n    query: `(all:gout OR all:hyperuricemia) AND (all:\"risk stratification\" OR all:\"precision medicine\" OR all:\"predictive analytics\" OR all:\"clinical validation\")`\n  },\n  {\n    group: \"comorbidities\",\n    query: `all:hyperuricemia AND (all:\"chronic kidney disease\" OR all:\"cardiovascular disease\" OR all:\"electronic health records\" OR all:\"wearable\")`\n  }\n];\nreturn queries.map(q => ({ json: q }));"
+      },
+      "id": "build-queries",
+      "name": "Build Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://export.arxiv.org/api/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "search_query", "value": "={{ $json.query }}"},
+            {"name": "start", "value": "0"},
+            {"name": "max_results", "value": "15"},
+            {"name": "sortBy", "value": "submittedDate"},
+            {"name": "sortOrder", "value": "descending"}
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "arxiv-request",
+      "name": "arXiv API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const xml = $input.first().json.data;\nconst group = $('Build Queries').item.json.group;\n\nfunction extractBetween(text, open, close) {\n  const results = [];\n  let start = 0;\n  while (true) {\n    const s = text.indexOf(open, start);\n    if (s === -1) break;\n    const e = text.indexOf(close, s + open.length);\n    if (e === -1) break;\n    results.push(text.substring(s + open.length, e).trim());\n    start = e + close.length;\n  }\n  return results;\n}\n\nconst entries = extractBetween(xml, '<entry>', '</entry>');\n\nconst articles = entries.map(entry => {\n  const arxiv_id_raw = extractBetween(entry, '<id>', '</id>')[0] || '';\n  const arxiv_id = arxiv_id_raw.replace('http://arxiv.org/abs/', '').trim();\n  const title = (extractBetween(entry, '<title>', '</title>')[0] || '').replace(/\\s+/g, ' ').trim();\n  const abstract = (extractBetween(entry, '<summary>', '</summary>')[0] || '').replace(/\\s+/g, ' ').trim();\n  const published = extractBetween(entry, '<published>', '</published>')[0] || '';\n  const authors = extractBetween(entry, '<name>', '</name>').join(', ');\n  return {\n    arxiv_id,\n    title,\n    abstract,\n    authors,\n    url: `https://arxiv.org/abs/${arxiv_id}`,\n    published_date: published.substring(0, 10),\n    group\n  };\n}).filter(a => a.arxiv_id);\n\nreturn articles.map(a => ({ json: a }));"
+      },
+      "id": "parse-xml",
+      "name": "Parse XML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "arxiv_articles",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {"keyName": "arxiv_id", "condition": "eq", "keyValue": "={{ $json.arxiv_id }}"}
+          ]
+        }
+      },
+      "id": "check-duplicate",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [980, 380],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {"includeUnpaired": true}
+      },
+      "id": "merge-data",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "typeValidation": "strict"},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {"type": "string", "operation": "empty", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-new",
+      "name": "IF New",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Проанализируй следующую научную статью с arXiv:\n\nНАЗВАНИЕ: {{ $json.title }}\nАВТОРЫ: {{ $json.authors }}\nДАТА: {{ $json.published_date }}\nССЫЛКА: {{ $json.url }}\n\nАННОТАЦИЯ:\n{{ $json.abstract }}\n\nСоздай структурированное саммари строго по этому шаблону:\n\n## 📌 Релевантность\n[Высокая / Средняя / Низкая] — одно предложение почему\n\n## 🎯 Главный вклад\n2-3 предложения: что именно предлагают авторы нового\n\n## 🤖 Методы ИИ/ML\n- Перечисли конкретные алгоритмы и архитектуры\n- Если не используются — напиши \"Не применяются\"\n\n## 🧬 Биомаркеры и данные\n- Какие предикторы/признаки используются\n- Тип данных (ЭМК, лаборатория, омиксы, носимые и т.д.)\n\n## 📊 Ключевые результаты\n- Метрики качества (AUC, accuracy, F1 и т.д.)\n- Размер выборки если указан\n\n## ⚕️ Клиническая значимость\n1-2 предложения: как это применимо в реальной клинике\n\n## 🔗 Связь с исследованием прогнозирования подагры\nКонкретно: что из этой статьи можно использовать\n\n## 📚 Цитировать?\n[Да / Возможно / Нет] — краткое обоснование",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Ты — научный ассистент-аналитик, специализирующийся на исследованиях подагры и гиперурикемии с применением методов ИИ. Анализируй научные статьи и создавай структурированные саммари на русском языке для исследователя в области прогнозирования подагры. Обращай особое внимание на: методы машинного обучения (XGBoost, GNN, explainable AI, ансамблевые методы), биомаркеры (уровень уратов, ХБП, ССЗ, эндотелиальная дисфункция), типы данных (ЭМК, омиксные, носимые устройства), клиническую применимость и валидацию, связь с коморбидностями. Если статья слабо связана с подагрой — прямо укажи это."
+            }
+          ]
+        }
+      },
+      "id": "summary-chain",
+      "name": "LLM Chain (Summary)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [1640, 240]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {"temperature": 0.3, "maxTokens": 1500}
+      },
+      "id": "openai-chat-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [1640, 440]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "a1", "name": "arxiv_id", "value": "={{ $('Merge').item.json.arxiv_id }}", "type": "string"},
+            {"id": "a2", "name": "title", "value": "={{ $('Merge').item.json.title }}", "type": "string"},
+            {"id": "a3", "name": "authors", "value": "={{ $('Merge').item.json.authors }}", "type": "string"},
+            {"id": "a4", "name": "abstract", "value": "={{ $('Merge').item.json.abstract }}", "type": "string"},
+            {"id": "a5", "name": "url", "value": "={{ $('Merge').item.json.url }}", "type": "string"},
+            {"id": "a6", "name": "published_date", "value": "={{ $('Merge').item.json.published_date }}", "type": "string"},
+            {"id": "a7", "name": "summary", "value": "={{ $json.text }}", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "compose-record",
+      "name": "Compose Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1860, 240]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "arxiv_articles",
+        "fieldsUi": {
+          "fieldValues": [
+            {"fieldId": "arxiv_id", "fieldValue": "={{ $json.arxiv_id }}"},
+            {"fieldId": "title", "fieldValue": "={{ $json.title }}"},
+            {"fieldId": "authors", "fieldValue": "={{ $json.authors }}"},
+            {"fieldId": "abstract", "fieldValue": "={{ $json.abstract }}"},
+            {"fieldId": "summary", "fieldValue": "={{ $json.summary }}"},
+            {"fieldId": "url", "fieldValue": "={{ $json.url }}"},
+            {"fieldId": "published_date", "fieldValue": "={{ $json.published_date }}"}
+          ]
+        }
+      },
+      "id": "save-article",
+      "name": "Save Article",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2080, 240]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": "documents",
+        "options": {
+          "queryName": "match_documents"
+        }
+      },
+      "id": "vector-store-insert",
+      "name": "Supabase Vector Store (Insert)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1,
+      "position": [2300, 240]
+    },
+    {
+      "parameters": {
+        "jsonData": "={\n  \"pageContent\": \"{{ $json.title }}\\n\\n{{ $json.abstract }}\\n\\nSUMMARY:\\n{{ $json.summary }}\",\n  \"metadata\": {\n    \"arxiv_id\": \"{{ $json.arxiv_id }}\",\n    \"title\": \"{{ $json.title }}\",\n    \"authors\": \"{{ $json.authors }}\",\n    \"url\": \"{{ $json.url }}\",\n    \"published_date\": \"{{ $json.published_date }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "doc-loader",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [2300, 440]
+    },
+    {
+      "parameters": {
+        "chunkSize": 1000,
+        "chunkOverlap": 100
+      },
+      "id": "text-splitter",
+      "name": "Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [2520, 560]
+    },
+    {
+      "parameters": {
+        "options": {"dimensions": 1536}
+      },
+      "id": "embeddings",
+      "name": "OpenAI Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [2080, 560]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "aggregate",
+      "name": "Aggregate All",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [2520, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $('Compose Record').all();\nconst today = new Date().toISOString().split('T')[0];\n\nlet html = `<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\"><style>\nbody { font-family: Calibri, Arial, sans-serif; padding: 40px; color: #222; }\nh1 { color: #1a4d8c; border-bottom: 2px solid #1a4d8c; padding-bottom: 10px; }\nh2 { color: #1a4d8c; margin-top: 30px; }\nh3 { color: #444; }\n.article { margin-bottom: 40px; padding: 20px; border-left: 4px solid #1a4d8c; background: #f9f9f9; }\n.meta { color: #666; font-size: 0.9em; margin-bottom: 10px; }\n.summary { white-space: pre-wrap; }\na { color: #1a4d8c; }\n</style></head><body>`;\n\nhtml += `<h1>📚 arXiv Дайджест: Подагра и ИИ</h1>`;\nhtml += `<p><strong>Дата:</strong> ${today}<br><strong>Новых статей:</strong> ${items.length}</p>`;\n\nfor (const item of items) {\n  const a = item.json;\n  const summaryHtml = (a.summary || '').replace(/## ([^\\n]+)/g, '<h3>$1</h3>').replace(/\\n/g, '<br>');\n  html += `<div class=\"article\">\n    <h2>${a.title}</h2>\n    <div class=\"meta\">\n      <strong>Авторы:</strong> ${a.authors}<br>\n      <strong>Дата:</strong> ${a.published_date}<br>\n      <strong>arXiv:</strong> <a href=\"${a.url}\">${a.arxiv_id}</a>\n    </div>\n    <div class=\"summary\">${summaryHtml}</div>\n  </div>`;\n}\nhtml += `</body></html>`;\n\nconst buffer = Buffer.from(html, 'utf-8');\nreturn [{\n  json: { filename: `arxiv_digest_${today}.doc`, count: items.length },\n  binary: {\n    data: {\n      data: buffer.toString('base64'),\n      mimeType: 'application/msword',\n      fileName: `arxiv_digest_${today}.doc`,\n      fileExtension: 'doc'\n    }\n  }\n}];"
+      },
+      "id": "build-doc",
+      "name": "Build .doc",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2740, 240]
+    },
+    {
+      "parameters": {
+        "fileName": "=/tmp/arxiv_digest_{{ $now.format('yyyy-MM-dd') }}.doc"
+      },
+      "id": "write-file",
+      "name": "Write Binary File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [2960, 240]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {"main": [[{"node": "Build Queries", "type": "main", "index": 0}]]},
+    "Build Queries": {"main": [[{"node": "arXiv API", "type": "main", "index": 0}]]},
+    "arXiv API": {"main": [[{"node": "Parse XML", "type": "main", "index": 0}]]},
+    "Parse XML": {"main": [[
+      {"node": "Check Duplicate", "type": "main", "index": 0},
+      {"node": "Merge", "type": "main", "index": 0}
+    ]]},
+    "Check Duplicate": {"main": [[{"node": "Merge", "type": "main", "index": 1}]]},
+    "Merge": {"main": [[{"node": "IF New", "type": "main", "index": 0}]]},
+    "IF New": {"main": [[{"node": "LLM Chain (Summary)", "type": "main", "index": 0}], []]},
+    "OpenAI Chat Model": {"ai_languageModel": [[{"node": "LLM Chain (Summary)", "type": "ai_languageModel", "index": 0}]]},
+    "LLM Chain (Summary)": {"main": [[{"node": "Compose Record", "type": "main", "index": 0}]]},
+    "Compose Record": {"main": [[{"node": "Save Article", "type": "main", "index": 0}]]},
+    "Save Article": {"main": [[{"node": "Supabase Vector Store (Insert)", "type": "main", "index": 0}]]},
+    "Default Data Loader": {"ai_document": [[{"node": "Supabase Vector Store (Insert)", "type": "ai_document", "index": 0}]]},
+    "Text Splitter": {"ai_textSplitter": [[{"node": "Default Data Loader", "type": "ai_textSplitter", "index": 0}]]},
+    "OpenAI Embeddings": {"ai_embedding": [[
+      {"node": "Supabase Vector Store (Insert)", "type": "ai_embedding", "index": 0}
+    ]]},
+    "Supabase Vector Store (Insert)": {"main": [[{"node": "Aggregate All", "type": "main", "index": 0}]]},
+    "Aggregate All": {"main": [[{"node": "Build .doc", "type": "main", "index": 0}]]},
+    "Build .doc": {"main": [[{"node": "Write Binary File", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"}
+}
